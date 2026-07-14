@@ -3,7 +3,7 @@
 OpsAgent is an AI agent that takes a plain-English business request (a support
 escalation, a customer complaint, an internal ask), plans the actions needed to
 resolve it, **pauses for human approval**, then executes real tool calls:
-opening a task/ticket, drafting an email, and posting a Slack alert.
+opening a task/ticket, drafting an email.
 
 Built to demonstrate agentic AI + workflow automation with real business
 impact — not just an LLM wrapper.
@@ -25,7 +25,6 @@ teams actually use.
 - **LangGraph** — stateful agent orchestration with a real human-in-the-loop interrupt (`interrupt_before`)
 - **Groq / Llama-3** — fast, free-tier LLM for understanding, planning, and drafting
 - **Streamlit** — approval UI
-- **Slack Incoming Webhooks** — real external integration, no OAuth needed
 - **JSON-backed task store** — stand-in for Jira/Notion; swap in a real API with the same function signature
 
 ## Tools the agent can call
@@ -34,7 +33,6 @@ teams actually use.
 |---|---|
 | `create_task` | Opens a task. Tries Jira, then Notion, then falls back to a local JSON store, depending on what's configured |
 | `search_tasks` | Looks up existing local tasks by keyword |
-| `send_slack_alert` | Posts a message to a Slack channel via webhook |
 | `draft_email` | Drafts (never auto-sends) a professional email from context |
 | `send_approved_email` | Actually sends a previously drafted email, via the real Gmail API |
 
@@ -103,9 +101,6 @@ streamlit run app.py
 python cli.py "Customer said order #4521 is 5 days late. Log a ticket and draft an apology email."
 ```
 
-Slack integration is optional — without `SLACK_WEBHOOK_URL` set, Slack calls
-are safely simulated and logged so the whole flow still runs end-to-end.
-
 ## Example
 
 **Request:** "Customer complained order #4521 is 5 days late. Log a ticket and draft an apology email."
@@ -113,7 +108,6 @@ are safely simulated and logged so the whole flow still runs end-to-end.
 **Agent proposes:**
 1. `create_task(title="Late delivery - order 4521", priority="high")`
 2. `draft_email(to="customer", subject="Apology for delayed order #4521", ...)`
-3. `send_slack_alert(message="High-priority ticket opened for order #4521")`
 
 **→ waits for approval →** executes → reports back what was actually done.
 
