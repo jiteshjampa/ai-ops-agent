@@ -4,3 +4,11 @@ groq>=0.11.0
 streamlit>=1.38.0
 python-dotenv>=1.0.0
 requests>=2.32.0
+
+# for mcp_server.py -- exposes tools to Claude Desktop
+mcp>=1.0.0
+
+# for agent/gmail_client.py -- optional, only needed if you set up Gmail sending
+google-auth>=2.35.0
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.147.0

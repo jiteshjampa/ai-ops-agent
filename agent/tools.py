@@ -36,7 +36,27 @@ def _save(path: Path, data: list) -> None:
 
 
 def create_task(title: str, description: str = "", priority: str = "medium") -> dict:
-    """Creates a task/ticket. Stand-in for Jira/Notion/Linear API."""
+    """
+    Creates a task/ticket. Tries real integrations first, in this order:
+    Jira -> Notion -> local JSON store. Whichever is configured (via env
+    vars) wins; if none are, it falls back to the JSON store so the agent
+    always has somewhere to put the task.
+    """
+    from agent.jira_client import is_configured as jira_configured, create_jira_issue
+    from agent.notion_client import is_configured as notion_configured, create_notion_task
+
+    if jira_configured():
+        result = create_jira_issue(title, description, priority)
+        result["tool"] = "create_task"
+        result["backend"] = "jira"
+        return result
+
+    if notion_configured():
+        result = create_notion_task(title, description, priority)
+        result["tool"] = "create_task"
+        result["backend"] = "notion"
+        return result
+
     tasks = _load(TASKS_FILE)
     task = {
         "id": str(uuid.uuid4())[:8],
@@ -48,7 +68,7 @@ def create_task(title: str, description: str = "", priority: str = "medium") -> 
     }
     tasks.append(task)
     _save(TASKS_FILE, tasks)
-    return {"tool": "create_task", "status": "success", "task": task}
+    return {"tool": "create_task", "status": "success", "backend": "local_json", "task": task}
 
 
 def search_tasks(query: str = "") -> dict:
@@ -115,17 +135,47 @@ def draft_email(to: str, subject: str, context: str) -> dict:
     return {"tool": "draft_email", "status": "drafted_not_sent", "draft": draft}
 
 
+def send_approved_email(to: str) -> dict:
+    """
+    Sends the most recently DRAFTED email (by draft_email) to this recipient,
+    via the real Gmail API.
+
+    Takes `to`, not a draft id -- the planner decides the whole tool sequence
+    BEFORE execution starts, so it can never know an id that draft_email will
+    only generate mid-execution. Looking the draft up by recipient at execute
+    time sidesteps that ordering problem. Sending is kept as a separate tool
+    from drafting (never merged into one "compose and send" call) so a plan
+    that only asks to draft never accidentally sends anything.
+    """
+    from agent.gmail_client import send_gmail
+
+    drafts = _load(DRAFTS_FILE)
+    matching = [d for d in drafts if d["to"] == to]
+    if not matching:
+        return {"tool": "send_approved_email", "status": "error", "error": f"no draft found for {to}"}
+
+    draft = matching[-1]  # most recent
+    result = send_gmail(draft["to"], draft["subject"], draft["body"])
+    result["tool"] = "send_approved_email"
+    result["draft_id_sent"] = draft["id"]
+    return result
+
+
 # Registry the planner/executor nodes use to look up tools by name.
 TOOL_REGISTRY = {
     "create_task": create_task,
     "search_tasks": search_tasks,
     "send_slack_alert": send_slack_alert,
     "draft_email": draft_email,
+    "send_approved_email": send_approved_email,
 }
 
 TOOL_DESCRIPTIONS = """
 - create_task(title, description, priority): opens a task/ticket. priority is "low"|"medium"|"high".
 - search_tasks(query): searches existing tasks by keyword.
 - send_slack_alert(message): posts a message to the team Slack channel.
-- draft_email(to, subject, context): drafts (does not send) a professional email.
+- draft_email(to, subject, context): drafts (does not send) a professional email. Returns a draft id.
+- send_approved_email(to): actually sends the most recent draft_email draft written to this recipient.
+  Only use this if the request clearly asks to SEND, not just draft, an email.
+  Always call draft_email first in the same plan if you use this.
 """

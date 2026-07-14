@@ -24,10 +24,20 @@ def main():
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
     print(f"\n📝 Request: {request}\n")
-    print("🧠 Understanding + planning...\n")
+    print("🧠 Understanding...\n")
     compiled_graph.invoke({"request": request, "trace": []}, config=config)
 
     snapshot = compiled_graph.get_state(config)
+    if "ask_human" in snapshot.next:
+        question = snapshot.values.get("clarifying_question", "")
+        print(f"❓ {question}")
+        answer = input("Your answer: ").strip()
+        updated_request = f"{request}\n\nClarification: {answer}"
+        compiled_graph.update_state(config, {"request": updated_request})
+        print("\n🧠 Planning...\n")
+        compiled_graph.invoke(None, config=config)
+        snapshot = compiled_graph.get_state(config)
+
     plan = snapshot.values.get("plan", [])
     print(f"Intent: {snapshot.values.get('intent')}\n")
     print("Proposed plan:")

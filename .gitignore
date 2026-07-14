@@ -5,3 +5,5 @@ data/
 .streamlit/secrets.toml
 venv/
 .venv/
+credentials.json
+token.json

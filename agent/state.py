@@ -13,6 +13,12 @@ class AgentState(TypedDict, total=False):
     # structured understanding of what the user actually wants
     intent: str
 
+    # whether the clarify step decided the request is too ambiguous to plan safely
+    needs_clarification: Optional[bool]
+
+    # the question the agent wants to ask before proceeding
+    clarifying_question: str
+
     # ordered list of planned tool calls, e.g.
     # [{"tool": "create_task", "args": {...}}, {"tool": "send_slack_alert", "args": {...}}]
     plan: List[Dict[str, Any]]

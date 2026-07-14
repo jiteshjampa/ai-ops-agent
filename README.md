@@ -32,10 +32,63 @@ teams actually use.
 
 | Tool | What it does |
 |---|---|
-| `create_task` | Opens a task/ticket (title, description, priority) |
-| `search_tasks` | Looks up existing tasks by keyword |
+| `create_task` | Opens a task. Tries Jira, then Notion, then falls back to a local JSON store, depending on what's configured |
+| `search_tasks` | Looks up existing local tasks by keyword |
 | `send_slack_alert` | Posts a message to a Slack channel via webhook |
 | `draft_email` | Drafts (never auto-sends) a professional email from context |
+| `send_approved_email` | Actually sends a previously drafted email, via the real Gmail API |
+
+All of Jira, Notion, and Gmail are optional. Nothing is hardcoded to require them —
+each one gracefully falls back to a simulated/local response if not configured,
+so the agent runs end-to-end with zero external accounts if you just want to
+try it out.
+
+## Multi-turn clarification
+
+Before planning, the agent checks whether the request has enough detail to act
+on safely. If something essential is missing (a recipient with no name, a
+priority that's genuinely unclear), it pauses — via a second LangGraph
+interrupt, the same mechanism as the approval gate — and asks a single
+clarifying question instead of guessing. Try a vague request like "handle the
+thing with the client" to see it trigger.
+
+## MCP server
+
+`mcp_server.py` exposes the same four tools directly to Claude Desktop (or any
+MCP client), reusing the exact functions from `agent/tools.py` — there's only
+one implementation of each tool, not a separate copy for the agent vs. the
+MCP server.
+
+```bash
+python mcp_server.py
+```
+
+To connect it to Claude Desktop, add this to your Claude Desktop config
+(`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "opsagent": {
+      "command": "python",
+      "args": ["/absolute/path/to/ai-ops-agent/mcp_server.py"]
+    }
+  }
+}
+```
+
+## Connecting real integrations
+
+Each integration is optional and independently configured via `.env`:
+
+- **Jira** — see setup steps at the top of `agent/jira_client.py`
+- **Notion** — see setup steps at the top of `agent/notion_client.py`
+- **Gmail** — see setup steps at the top of `agent/gmail_client.py` (needs a
+  `credentials.json` file, not just an env var, since it uses OAuth)
+
+`create_task` checks Jira, then Notion, then falls back to the local JSON
+store — whichever is configured first wins, so you only need to set up the
+one you actually use.
 
 ## Run it
 
@@ -76,7 +129,8 @@ are safely simulated and logged so the whole flow still runs end-to-end.
 
 ## Next steps (roadmap)
 
-- Swap the JSON task store for real Jira/Notion API calls
-- Add Gmail API for actually sending approved drafts
-- Expose the agent as an MCP server so it's usable directly from Claude Desktop
-- Add multi-turn clarification when a request is ambiguous
+- Persist the LangGraph checkpointer to SQLite instead of in-memory, so
+  in-progress approvals survive a container restart
+- Add more MCP client integrations (Google Workspace, Jira, Notion directly
+  as MCP servers instead of custom API wrappers)
+- Multi-step clarification (currently asks at most one question per request)

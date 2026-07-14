@@ -35,10 +35,22 @@ if not os.environ.get("GROQ_API_KEY"):
     st.warning("Set GROQ_API_KEY (in a .env file or environment variable) to run this. "
                "Free key: https://console.groq.com/keys")
 
+def stage_from_snapshot(config) -> str:
+    """LangGraph tells us which node is about to run via snapshot.next.
+    We use that to decide which UI screen to show."""
+    snapshot = compiled_graph.get_state(config)
+    next_nodes = snapshot.next
+    if "ask_human" in next_nodes:
+        return "awaiting_clarification"
+    if "execute" in next_nodes:
+        return "awaiting_approval"
+    return "done"
+
+
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "stage" not in st.session_state:
-    st.session_state.stage = "input"  # input -> awaiting_approval -> done
+    st.session_state.stage = "input"  # input -> awaiting_clarification? -> awaiting_approval -> done
 
 config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
@@ -51,9 +63,27 @@ request = st.text_area(
 
 if st.session_state.stage == "input":
     if st.button("Plan it", type="primary", disabled=not request.strip()):
-        with st.spinner("Understanding request and planning steps..."):
+        with st.spinner("Understanding request..."):
             compiled_graph.invoke({"request": request, "trace": []}, config=config)
-        st.session_state.stage = "awaiting_approval"
+        st.session_state.stage = stage_from_snapshot(config)
+        st.rerun()
+
+elif st.session_state.stage == "awaiting_clarification":
+    snapshot = compiled_graph.get_state(config)
+    question = snapshot.values.get("clarifying_question", "")
+
+    st.subheader("One quick question before I plan this")
+    st.write(question)
+    answer = st.text_input("Your answer")
+
+    if st.button("Continue", type="primary", disabled=not answer.strip()):
+        original_request = snapshot.values.get("request", "")
+        updated_request = f"{original_request}\n\nClarification: {answer}"
+        with st.spinner("Got it, planning..."):
+            # Fold the answer into state, then resume the graph past ask_human.
+            compiled_graph.update_state(config, {"request": updated_request})
+            compiled_graph.invoke(None, config=config)
+        st.session_state.stage = stage_from_snapshot(config)
         st.rerun()
 
 elif st.session_state.stage == "awaiting_approval":
@@ -72,7 +102,7 @@ elif st.session_state.stage == "awaiting_approval":
         if st.button("Approve & Execute", type="primary"):
             with st.spinner("Executing approved plan..."):
                 compiled_graph.invoke(None, config=config)  # resume from the interrupt
-            st.session_state.stage = "done"
+            st.session_state.stage = stage_from_snapshot(config)
             st.rerun()
     with col2:
         if st.button("Reject / Start over"):
